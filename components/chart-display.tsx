@@ -25,6 +25,8 @@ interface ChartDisplayProps {
   data: MonthlyData[]
   chartType: "line" | "bar"
   title: string
+  exportHeading?: string
+  exportSubheading?: string
 }
 
 const CHART_COLOR = "hsl(217 91% 60%)"
@@ -44,7 +46,13 @@ function formatMonthLabel(month: string): string {
   return `${parsed.getFullYear()} ${monthName}`
 }
 
-const ChartDisplay = memo(function ChartDisplay({ data, chartType, title }: ChartDisplayProps) {
+const ChartDisplay = memo(function ChartDisplay({
+  data,
+  chartType,
+  title,
+  exportHeading,
+  exportSubheading,
+}: ChartDisplayProps) {
   const [labelColor, setLabelColor] = useState(DEFAULT_LABEL_COLOR)
 
   useEffect(() => {
@@ -62,6 +70,8 @@ const ChartDisplay = memo(function ChartDisplay({ data, chartType, title }: Char
   }))
   const exportRef = useRef<HTMLDivElement>(null)
   const [isExporting, setIsExporting] = useState(false)
+  const exportHeadingRef = useRef<HTMLDivElement>(null)
+  const exportSubheadingRef = useRef<HTMLParagraphElement>(null)
   const renderValueLabel = useCallback(
     (props: { x?: number; y?: number; value?: number | string }) => {
       const { x, y, value } = props
@@ -84,10 +94,29 @@ const ChartDisplay = memo(function ChartDisplay({ data, chartType, title }: Char
     },
     [labelColor],
   )
+  const legendProps = {
+    align: "center" as const,
+    verticalAlign: "bottom" as const,
+    iconType: "square" as const,
+    wrapperStyle: { paddingTop: 16 },
+  }
 
   const handleExport = useCallback(async () => {
     if (!exportRef.current) return
     const restoreFns: Array<() => void> = []
+
+    const revealExportHeadings = () => {
+      const nodes = [exportHeadingRef.current, exportSubheadingRef.current].filter(
+        (node): node is HTMLElement => Boolean(node),
+      )
+      nodes.forEach((node) => {
+        const previousDisplay = node.style.display
+        restoreFns.push(() => {
+          node.style.display = previousDisplay
+        })
+        node.style.display = "block"
+      })
+    }
 
     const hideInteractiveStates = () => {
       const container = exportRef.current
@@ -114,6 +143,7 @@ const ChartDisplay = memo(function ChartDisplay({ data, chartType, title }: Char
       })
     }
 
+    revealExportHeadings()
     hideInteractiveStates()
 
     setIsExporting(true)
@@ -132,13 +162,13 @@ const ChartDisplay = memo(function ChartDisplay({ data, chartType, title }: Char
   }
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 print-surface print-section">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h2 className="text-xl font-semibold text-foreground">{title}</h2>
         <Button
           variant="outline"
           size="sm"
-          className="gap-2"
+          className="gap-2 no-print"
           onClick={handleExport}
           disabled={isExporting}
           aria-label="Cetak diagram ke PDF"
@@ -148,7 +178,27 @@ const ChartDisplay = memo(function ChartDisplay({ data, chartType, title }: Char
         </Button>
       </div>
       <div ref={exportRef} className="space-y-6">
-        <div className="h-[400px]">
+        {(exportHeading || exportSubheading) && (
+          <div className="space-y-2 text-center">
+            {exportHeading && (
+              <div
+                ref={exportHeadingRef}
+                className="hidden text-3xl font-bold leading-snug text-foreground"
+              >
+                {exportHeading}
+              </div>
+            )}
+            {exportSubheading && (
+              <p
+                ref={exportSubheadingRef}
+                className="hidden text-sm text-muted-foreground"
+              >
+                {exportSubheading}
+              </p>
+            )}
+          </div>
+        )}
+        <div className="h-[400px] chart-wrap">
           <ResponsiveContainer width="100%" height="100%">
             {chartType === "line" ? (
               <LineChart data={chartData} margin={{ top: 32, right: 24, left: 16, bottom: 0 }}>
@@ -170,7 +220,7 @@ const ChartDisplay = memo(function ChartDisplay({ data, chartType, title }: Char
                   labelFormatter={(label) => formatMonthLabel(label as string)}
                   formatter={(value) => [`${value} interns`, "Active"]}
                 />
-                <Legend />
+                <Legend {...legendProps} />
                 <Line
                   type="monotone"
                   dataKey="active"
@@ -214,7 +264,7 @@ const ChartDisplay = memo(function ChartDisplay({ data, chartType, title }: Char
                   labelFormatter={(label) => formatMonthLabel(label as string)}
                   formatter={(value) => [`${value} interns`, "Active"]}
                 />
-                <Legend />
+                <Legend {...legendProps} />
                 <Bar
                   dataKey="active"
                   fill={CHART_COLOR}
@@ -234,7 +284,7 @@ const ChartDisplay = memo(function ChartDisplay({ data, chartType, title }: Char
             )}
           </ResponsiveContainer>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto print-summary">
           <Table>
             <TableHeader>
               <TableRow>

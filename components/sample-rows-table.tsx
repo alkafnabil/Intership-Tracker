@@ -44,7 +44,7 @@ const SampleRowsTable = memo(function SampleRowsTable({
   }
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 no-print">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between mb-4">
         <div>
           <h2 className="text-xl font-semibold text-foreground">Sample Rows Causing Count</h2>
@@ -52,7 +52,7 @@ const SampleRowsTable = memo(function SampleRowsTable({
             Showing up to 10 records that overlap with the selected month.
           </p>
         </div>
-        <div className="w-full md:w-72">
+        <div className="w-full md:w-72 no-print">
           <label className="block text-sm font-medium text-foreground mb-2">Month</label>
           <select
             value={selectedMonth ?? ""}

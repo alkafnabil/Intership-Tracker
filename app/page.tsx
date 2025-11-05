@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react"
 import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import FileUploadArea from "@/components/file-upload-area"
 import FilterPanel from "@/components/filter-panel"
 import ChartDisplay from "@/components/chart-display"
@@ -10,6 +11,7 @@ import SummaryTable from "@/components/summary-table"
 import SampleRowsTable from "@/components/sample-rows-table"
 import { parseExcelFile } from "@/lib/data-processor"
 import type { InternshipRecord } from "@/lib/types"
+import { Printer } from "lucide-react"
 
 const LEVEL_ORDER = ["SMK", "Universitas"] as const
 const SMK_KEYWORDS = ["smk", "stm", "smkn", "smks", "sekolah menengah kejuruan", "vocational"]
@@ -127,6 +129,8 @@ function isActiveInMonth(record: RecordWithLevel, monthStart: Date, monthEnd: Da
 
 const monthLabelFormatter = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" })
 const dateDisplayFormatter = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" })
+const monthOnlyFormatter = new Intl.DateTimeFormat("id-ID", { month: "long" })
+const printDateFormatter = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric" })
 
 function formatMonthKey(monthKey: string): string {
   const [yearStr, monthStr] = monthKey.split("-")
@@ -145,6 +149,47 @@ function formatDisplayDate(date?: Date | null, fallback?: string): string {
     return fallback
   }
   return "-"
+}
+
+function createMonthKey(year: number, month: number): string {
+  return `${year}-${String(month).padStart(2, "0")}`
+}
+
+function compareMonthKeys(a: string, b: string): number {
+  if (a === b) return 0
+  return a < b ? -1 : 1
+}
+
+function formatRangeToID(start?: Date | null, end?: Date | null): string {
+  if (!start || !end) {
+    return "Rekap Periode Bulan"
+  }
+
+  const [earliest, latest] = start <= end ? [start, end] : [end, start]
+  const startYear = earliest.getUTCFullYear()
+  const endYear = latest.getUTCFullYear()
+  const startHalfIndex = Math.floor(earliest.getUTCMonth() / 6)
+  const endHalfIndex = Math.floor(latest.getUTCMonth() / 6)
+
+  if (startYear === endYear && startHalfIndex === endHalfIndex) {
+    const halfLabels =
+      startHalfIndex === 0
+        ? { start: "Januari", end: "Juni" }
+        : { start: "Juli", end: "Desember" }
+    return `Rekap Periode Bulan ${halfLabels.start} - ${halfLabels.end} ${startYear}`
+  }
+
+  const startLabel = monthOnlyFormatter.format(earliest)
+  const endLabel = monthOnlyFormatter.format(latest)
+
+  if (startYear === endYear) {
+    if (startLabel === endLabel) {
+      return `Rekap Periode Bulan ${startLabel} ${startYear}`
+    }
+    return `Rekap Periode Bulan ${startLabel} - ${endLabel} ${startYear}`
+  }
+
+  return `Rekap Periode Bulan ${startLabel} ${startYear} - ${endLabel} ${endYear}`
 }
 
 function sortLevels(levels: string[]): string[] {
@@ -207,7 +252,15 @@ export default function Home() {
   const [chartType, setChartType] = useState<"line" | "bar">("line")
   const [error, setError] = useState<string>("")
   const [loading, setLoading] = useState(false)
+  const [selectedStartPeriod, setSelectedStartPeriod] = useState<string | null>(null)
+  const [selectedEndPeriod, setSelectedEndPeriod] = useState<string | null>(null)
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
+  const printDateLabel = useMemo(() => printDateFormatter.format(new Date()), [])
+  const handlePrint = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.print()
+    }
+  }, [])
 
   const levelOptions = useMemo(() => {
     const levelLabels = new Map<string, string>()
@@ -244,8 +297,77 @@ export default function Home() {
       filtered = filtered.filter((record) => recordOverlapsRange(record, start, end))
     }
 
+    if (selectedStartPeriod && selectedEndPeriod) {
+      const firstKey =
+        compareMonthKeys(selectedStartPeriod, selectedEndPeriod) <= 0 ? selectedStartPeriod : selectedEndPeriod
+      const lastKey =
+        compareMonthKeys(selectedStartPeriod, selectedEndPeriod) <= 0 ? selectedEndPeriod : selectedStartPeriod
+      const { start } = getMonthBounds(firstKey)
+      const { end } = getMonthBounds(lastKey)
+      filtered = filtered.filter((record) => recordOverlapsRange(record, start, end))
+    }
+
     return filtered
-  }, [levelFilteredRecords, selectedYear, selectedSemester])
+  }, [levelFilteredRecords, selectedYear, selectedSemester, selectedStartPeriod, selectedEndPeriod])
+
+  const rangeExtents = useMemo(() => {
+    if (levelFilteredRecords.length === 0) {
+      return null
+    }
+
+    let minStart: Date | null = null
+    let maxEnd: Date | null = null
+    const now = new Date()
+
+    levelFilteredRecords.forEach((record) => {
+      if (!record.startDate) return
+      if (!minStart || record.startDate < minStart) {
+        minStart = record.startDate
+      }
+      const endReference = record.endDate ?? now
+      if (!maxEnd || endReference > maxEnd) {
+        maxEnd = endReference
+      }
+    })
+
+    if (!minStart || !maxEnd) return null
+
+    return { start: minStart, end: maxEnd }
+  }, [levelFilteredRecords])
+
+  const availablePeriodKeys = useMemo(() => {
+    if (!rangeExtents) return []
+    return generateMonthKeysInRange(rangeExtents.start, rangeExtents.end)
+  }, [rangeExtents])
+
+  const periodOptions = useMemo(() => {
+    return availablePeriodKeys.map((key) => ({
+      value: key,
+      label: formatMonthKey(key),
+    }))
+  }, [availablePeriodKeys])
+
+  useEffect(() => {
+    if (availablePeriodKeys.length === 0) {
+      setSelectedStartPeriod(null)
+      setSelectedEndPeriod(null)
+      return
+    }
+
+    setSelectedStartPeriod((previous) => {
+      if (previous && availablePeriodKeys.includes(previous)) {
+        return previous
+      }
+      return availablePeriodKeys[0]
+    })
+
+    setSelectedEndPeriod((previous) => {
+      if (previous && availablePeriodKeys.includes(previous)) {
+        return previous
+      }
+      return availablePeriodKeys[availablePeriodKeys.length - 1]
+    })
+  }, [availablePeriodKeys])
 
   const availableYears = useMemo(() => {
     const yearSet = new Set<number>()
@@ -274,7 +396,26 @@ export default function Home() {
     ])
   }, [years])
 
+  const customRange = useMemo(() => {
+    if (!selectedStartPeriod && !selectedEndPeriod) return null
+
+    const startKey = selectedStartPeriod ?? selectedEndPeriod
+    const endKey = selectedEndPeriod ?? selectedStartPeriod
+    if (!startKey || !endKey) return null
+
+    const firstKey = compareMonthKeys(startKey, endKey) <= 0 ? startKey : endKey
+    const lastKey = compareMonthKeys(startKey, endKey) <= 0 ? endKey : startKey
+    const { start } = getMonthBounds(firstKey)
+    const { end } = getMonthBounds(lastKey)
+
+    return { start, end, startKey: firstKey, endKey: lastKey }
+  }, [selectedStartPeriod, selectedEndPeriod])
+
   const selectedRange = useMemo(() => {
+    if (customRange) {
+      return { start: customRange.start, end: customRange.end }
+    }
+
     if (selectedSemester) {
       const { year, semester } = parseSemesterValue(selectedSemester)
       return getSemesterRange(year, semester)
@@ -284,25 +425,8 @@ export default function Home() {
       return getYearRange(selectedYear)
     }
 
-    let minStart: Date | null = null
-    let maxEnd: Date | null = null
-    const now = new Date()
-
-    levelFilteredRecords.forEach((record) => {
-      if (!record.startDate) return
-      if (!minStart || record.startDate < minStart) {
-        minStart = record.startDate
-      }
-      const endReference = record.endDate ?? now
-      if (!maxEnd || endReference > maxEnd) {
-        maxEnd = endReference
-      }
-    })
-
-    if (!minStart || !maxEnd) return null
-
-    return { start: minStart, end: maxEnd }
-  }, [selectedSemester, selectedYear, levelFilteredRecords])
+    return rangeExtents
+  }, [customRange, selectedSemester, selectedYear, rangeExtents])
 
   const monthKeys = useMemo(() => {
     if (!selectedRange) return []
@@ -310,11 +434,18 @@ export default function Home() {
   }, [selectedRange])
 
   const recordsForCounting = useMemo(() => {
-    if (selectedYear || selectedSemester) {
+    if (selectedYear || selectedSemester || (selectedStartPeriod && selectedEndPeriod)) {
       return recordsForView
     }
     return levelFilteredRecords
-  }, [selectedYear, selectedSemester, recordsForView, levelFilteredRecords])
+  }, [
+    selectedYear,
+    selectedSemester,
+    selectedStartPeriod,
+    selectedEndPeriod,
+    recordsForView,
+    levelFilteredRecords,
+  ])
 
   const monthlyData = useMemo(() => {
     if (monthKeys.length === 0) return []
@@ -347,6 +478,12 @@ export default function Home() {
     }))
   }, [monthlyData])
 
+  const reportTitle = useMemo(() => formatRangeToID(selectedRange?.start, selectedRange?.end), [selectedRange])
+  const reportSubheader = useMemo(
+    () => `Tanggal cetak: ${printDateLabel} \u2022 Sumber: Internship Tracker.`,
+    [printDateLabel]
+  )
+
   const handleMonthSelection = useCallback((month: string | null) => {
     setSelectedMonth(month)
   }, [])
@@ -372,11 +509,29 @@ export default function Home() {
   }, [selectedMonth, recordsForCounting])
 
   const dateWindowLabel = useMemo(() => {
-    if (!selectedSemester) return ""
-    const { year, semester } = parseSemesterValue(selectedSemester)
-    const rangeLabel = semester === 1 ? "Jan-Jun" : "Jul-Des"
-    return `Date window: ${rangeLabel} ${year} only`
-  }, [selectedSemester])
+    if (!selectedRange) return ""
+
+    if (selectedSemester) {
+      const { year, semester } = parseSemesterValue(selectedSemester)
+      const rangeLabel = semester === 1 ? "Jan-Jun" : "Jul-Des"
+      return `Periode dipilih: ${rangeLabel} ${year}`
+    }
+
+    if (selectedYear) {
+      return `Periode dipilih: Januari - Desember ${selectedYear}`
+    }
+
+    if (customRange) {
+      const startLabel = formatMonthKey(customRange.startKey)
+      const endLabel = formatMonthKey(customRange.endKey)
+      if (customRange.startKey === customRange.endKey) {
+        return `Periode dipilih: ${startLabel}`
+      }
+      return `Periode dipilih: ${startLabel} - ${endLabel}`
+    }
+
+    return ""
+  }, [selectedRange, selectedSemester, selectedYear, customRange])
 
   const sampleEmptyMessage = useMemo(() => {
     if (selectedLevel && normalizeLevelValue(selectedLevel) === "SMK") {
@@ -463,16 +618,94 @@ export default function Home() {
     }
   }, [])
 
-  const handleYearChange = useCallback((year: number | null) => {
-    setSelectedYear(year)
+  const handleYearChange = useCallback(
+    (year: number | null) => {
+      setSelectedYear(year)
+      setSelectedSemester(null)
+
+      if (year == null) {
+        return
+      }
+
+      const yearPrefix = `${year}-`
+      const matchingKeys = availablePeriodKeys.filter((key) => key.startsWith(yearPrefix))
+
+      if (matchingKeys.length > 0) {
+        setSelectedStartPeriod(matchingKeys[0])
+        setSelectedEndPeriod(matchingKeys[matchingKeys.length - 1])
+      } else {
+        setSelectedStartPeriod(createMonthKey(year, 1))
+        setSelectedEndPeriod(createMonthKey(year, 12))
+      }
+    },
+    [availablePeriodKeys]
+  )
+
+  const handleSemesterChange = useCallback(
+    (semester: string | null) => {
+      setSelectedSemester(semester)
+      if (!semester) {
+        return
+      }
+
+      const { year, semester: semesterNumber } = parseSemesterValue(semester)
+      setSelectedYear(year)
+
+      const startMonth = semesterNumber === 1 ? 1 : 7
+      const endMonth = semesterNumber === 1 ? 6 : 12
+      const startKeyTarget = createMonthKey(year, startMonth)
+      const endKeyTarget = createMonthKey(year, endMonth)
+
+      const matchingKeys = availablePeriodKeys.filter(
+        (key) =>
+          compareMonthKeys(key, startKeyTarget) >= 0 &&
+          compareMonthKeys(key, endKeyTarget) <= 0 &&
+          key.startsWith(`${year}-`)
+      )
+
+      if (matchingKeys.length > 0) {
+        setSelectedStartPeriod(matchingKeys[0])
+        setSelectedEndPeriod(matchingKeys[matchingKeys.length - 1])
+      } else {
+        setSelectedStartPeriod(startKeyTarget)
+        setSelectedEndPeriod(endKeyTarget)
+      }
+    },
+    [availablePeriodKeys]
+  )
+
+  const handleStartPeriodChange = useCallback((period: string | null) => {
+    setSelectedYear(null)
+    setSelectedSemester(null)
+    if (!period) {
+      setSelectedStartPeriod(null)
+      return
+    }
+
+    setSelectedStartPeriod(period)
+    setSelectedEndPeriod((previous) => {
+      if (!previous || compareMonthKeys(period, previous) > 0) {
+        return period
+      }
+      return previous
+    })
   }, [])
 
-  const handleSemesterChange = useCallback((semester: string | null) => {
-    setSelectedSemester(semester)
-    if (semester) {
-      const { year } = parseSemesterValue(semester)
-      setSelectedYear(year)
+  const handleEndPeriodChange = useCallback((period: string | null) => {
+    setSelectedYear(null)
+    setSelectedSemester(null)
+    if (!period) {
+      setSelectedEndPeriod(null)
+      return
     }
+
+    setSelectedEndPeriod(period)
+    setSelectedStartPeriod((previous) => {
+      if (!previous || compareMonthKeys(previous, period) > 0) {
+        return period
+      }
+      return previous
+    })
   }, [])
 
   const handleLevelChange = useCallback((level: string | null) => {
@@ -488,18 +721,49 @@ export default function Home() {
     setSelectedYear(null)
     setSelectedSemester(null)
     setSelectedLevel(null)
+    setSelectedStartPeriod(null)
+    setSelectedEndPeriod(null)
     setSelectedMonth(null)
     setError("")
   }, [])
 
   return (
     <main className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto print-container">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">Internship Tracker</h1>
-          <p className="text-muted-foreground">Upload Excel files to analyze active internships per month</p>
+          {records.length === 0 ? (
+            <div className="screen-only">
+              <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">Internship Tracker</h1>
+              <p className="text-muted-foreground">Upload Excel files to analyze active internships per month</p>
+            </div>
+          ) : (
+            <div className="screen-only flex flex-col gap-4">
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                <div>
+                  <h1 className="text-3xl md:text-4xl font-bold text-foreground">{reportTitle}</h1>
+                  <p className="text-sm md:text-base text-muted-foreground">{reportSubheader}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handlePrint}
+                  className="no-print inline-flex items-center gap-2 self-start"
+                >
+                  <Printer className="h-4 w-4" />
+                  Cetak PDF
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
+
+        {records.length > 0 && (
+          <div className="print-only mb-8">
+            <h1 className="print-title text-foreground">{reportTitle}</h1>
+            <p className="print-subtitle text-foreground">{reportSubheader}</p>
+          </div>
+        )}
 
         {/* Error Display */}
         {error && (
@@ -510,7 +774,9 @@ export default function Home() {
 
         {/* Upload Section */}
         {records.length === 0 ? (
-          <FileUploadArea onFileUpload={handleFileUpload} loading={loading} />
+          <div className="no-print">
+            <FileUploadArea onFileUpload={handleFileUpload} loading={loading} />
+          </div>
         ) : (
           <div className="space-y-6">
             {/* Filters */}
@@ -521,6 +787,11 @@ export default function Home() {
               semesters={semesterOptions}
               selectedSemester={selectedSemester}
               onSemesterChange={handleSemesterChange}
+              periodOptions={periodOptions}
+              selectedStartPeriod={selectedStartPeriod}
+              selectedEndPeriod={selectedEndPeriod}
+              onStartPeriodChange={handleStartPeriodChange}
+              onEndPeriodChange={handleEndPeriodChange}
               selectedLevel={selectedLevel}
               levelOptions={levelOptions}
               onLevelChange={handleLevelChange}
@@ -536,7 +807,13 @@ export default function Home() {
 
             {/* Chart */}
             {monthlyData.length > 0 && (
-              <ChartDisplay data={monthlyData} chartType={chartType} title="Jumlah Magang Aktif per Bulan" />
+              <ChartDisplay
+                data={monthlyData}
+                chartType={chartType}
+                title="Jumlah Magang Aktif per Bulan"
+                exportHeading={reportTitle}
+                exportSubheading={reportSubheader}
+              />
             )}
 
             <SampleRowsTable

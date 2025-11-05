@@ -12,6 +12,11 @@ interface FilterPanelProps {
   semesters: { value: string; label: string }[]
   selectedSemester: string | null
   onSemesterChange: (semester: string | null) => void
+  periodOptions: { value: string; label: string }[]
+  selectedStartPeriod: string | null
+  selectedEndPeriod: string | null
+  onStartPeriodChange: (value: string | null) => void
+  onEndPeriodChange: (value: string | null) => void
   selectedLevel: string | null
   levelOptions: string[]
   onLevelChange: (level: string | null) => void
@@ -28,6 +33,11 @@ const FilterPanel = memo(function FilterPanel({
   semesters,
   selectedSemester,
   onSemesterChange,
+  periodOptions,
+  selectedStartPeriod,
+  selectedEndPeriod,
+  onStartPeriodChange,
+  onEndPeriodChange,
   selectedLevel,
   onLevelChange,
   chartType,
@@ -39,8 +49,48 @@ const FilterPanel = memo(function FilterPanel({
   const options = levelOptions.length > 0 ? levelOptions : ["SMK", "Universitas"]
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 no-print">
       <div className="flex flex-col md:flex-row md:flex-wrap gap-6 items-start md:items-end">
+        {/* Start Month Filter */}
+        <div className="flex-1 min-w-[12rem]">
+          <label className="block text-sm font-medium text-foreground mb-2">Bulan Awal</label>
+          <select
+            value={selectedStartPeriod ?? ""}
+            onChange={(e) => onStartPeriodChange(e.target.value || null)}
+            disabled={periodOptions.length === 0}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground"
+          >
+            <option value="" disabled>
+              Pilih Bulan
+            </option>
+            {periodOptions.map((period) => (
+              <option key={period.value} value={period.value}>
+                {period.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* End Month Filter */}
+        <div className="flex-1 min-w-[12rem]">
+          <label className="block text-sm font-medium text-foreground mb-2">Bulan Akhir</label>
+          <select
+            value={selectedEndPeriod ?? ""}
+            onChange={(e) => onEndPeriodChange(e.target.value || null)}
+            disabled={periodOptions.length === 0}
+            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground"
+          >
+            <option value="" disabled>
+              Pilih Bulan
+            </option>
+            {periodOptions.map((period) => (
+              <option key={period.value} value={period.value}>
+                {period.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Year Filter */}
         <div className="flex-1">
           <label className="block text-sm font-medium text-foreground mb-2">Year</label>

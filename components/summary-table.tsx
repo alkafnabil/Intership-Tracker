@@ -46,7 +46,7 @@ const SummaryTable = memo(function SummaryTable({ data, records }: SummaryTableP
   }, [records])
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 no-print">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
           <h2 className="text-xl font-semibold text-foreground mb-2">Summary</h2>
@@ -60,7 +60,7 @@ const SummaryTable = memo(function SummaryTable({ data, records }: SummaryTableP
             )}
           </div>
         </div>
-        <Button onClick={handleDownloadCSV} className="gap-2">
+        <Button onClick={handleDownloadCSV} className="gap-2 no-print">
           <Download className="w-4 h-4" />
           Download CSV
         </Button>

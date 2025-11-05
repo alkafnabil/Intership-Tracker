@@ -49,13 +49,13 @@ const InstitutionDistributionTable = memo(function InstitutionDistributionTable(
   }
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 no-print">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h2 className="text-xl font-semibold text-foreground">{title}</h2>
         <Button
           variant="outline"
           size="sm"
-          className="gap-2"
+          className="gap-2 no-print"
           onClick={handleExport}
           disabled={isExporting}
           aria-label="Cetak distribusi institusi ke PDF"
