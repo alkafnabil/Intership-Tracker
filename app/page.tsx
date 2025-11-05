@@ -7,7 +7,8 @@ import FilterPanel from "@/components/filter-panel"
 import ChartDisplay from "@/components/chart-display"
 import InstitutionDistributionTable from "@/components/institution-distribution-table"
 import SummaryTable from "@/components/summary-table"
-import { parseExcelFile, calculateActiveInterns } from "@/lib/data-processor"
+import SampleRowsTable from "@/components/sample-rows-table"
+import { parseExcelFile } from "@/lib/data-processor"
 import type { InternshipRecord } from "@/lib/types"
 
 const LEVEL_ORDER = ["SMK", "Universitas"] as const
@@ -38,6 +39,14 @@ const UNIVERSITY_KEYWORDS = [
 
 interface RecordWithLevel extends InternshipRecord {
   computedLevel: string
+  normalizedLevel: string
+  startDate: Date | null
+  endDate: Date | null
+}
+
+function normalizeLevelValue(value?: string | null): string {
+  if (!value) return ""
+  return value.toString().trim().toUpperCase()
 }
 
 function categorizeByKeywords(value?: string | null): "SMK" | "Universitas" | "" {
@@ -71,14 +80,71 @@ function determineLevel(record: InternshipRecord): string {
   return categorizeByKeywords(record.instansi) || ""
 }
 
-function recordMatchesYear(record: InternshipRecord, year: number): boolean {
-  const yearStart = new Date(year, 0, 1)
-  const yearEnd = new Date(year, 11, 31)
+function parseDateOnly(value?: string | null): Date | null {
+  if (!value) return null
+  const parts = value.split("-").map((part) => Number.parseInt(part, 10))
+  if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) return null
+  const [year, month, day] = parts
+  return new Date(Date.UTC(year, month - 1, day))
+}
 
-  const startDate = new Date(record.tanggalMulai)
-  const endDate = record.tanggalSelesai ? new Date(record.tanggalSelesai) : new Date()
+function formatYearMonthUTC(date: Date): string {
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0")
+  return `${year}-${month}`
+}
 
-  return startDate <= yearEnd && endDate >= yearStart
+function getMonthBounds(monthKey: string): { start: Date; end: Date } {
+  const [yearStr, monthStr] = monthKey.split("-")
+  const year = Number.parseInt(yearStr, 10)
+  const month = Number.parseInt(monthStr, 10)
+  const start = new Date(Date.UTC(year, month - 1, 1))
+  const nextMonthStart = new Date(Date.UTC(year, month, 1))
+  const end = new Date(nextMonthStart.getTime() - 1)
+  return { start, end }
+}
+
+function generateMonthKeysInRange(start: Date, end: Date): string[] {
+  const months: string[] = []
+  if (!start || !end) return months
+
+  let current = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1))
+  const lastMonth = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1))
+
+  while (current <= lastMonth) {
+    months.push(formatYearMonthUTC(current))
+    current = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth() + 1, 1))
+  }
+
+  return months
+}
+
+function isActiveInMonth(record: RecordWithLevel, monthStart: Date, monthEnd: Date): boolean {
+  if (!record.startDate) return false
+  const effectiveEnd = record.endDate ?? monthEnd
+  return record.startDate <= monthEnd && effectiveEnd >= monthStart
+}
+
+const monthLabelFormatter = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" })
+const dateDisplayFormatter = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" })
+
+function formatMonthKey(monthKey: string): string {
+  const [yearStr, monthStr] = monthKey.split("-")
+  const year = Number.parseInt(yearStr, 10)
+  const month = Number.parseInt(monthStr, 10)
+  if (Number.isNaN(year) || Number.isNaN(month)) return monthKey
+  const date = new Date(Date.UTC(year, month - 1, 1))
+  return monthLabelFormatter.format(date)
+}
+
+function formatDisplayDate(date?: Date | null, fallback?: string): string {
+  if (date && !Number.isNaN(date.getTime())) {
+    return dateDisplayFormatter.format(date)
+  }
+  if (fallback && fallback.trim() !== "") {
+    return fallback
+  }
+  return "-"
 }
 
 function sortLevels(levels: string[]): string[] {
@@ -97,17 +163,32 @@ function sortLevels(levels: string[]): string[] {
   })
 }
 
-function recordOverlapsRange(record: InternshipRecord, start: Date, end: Date): boolean {
-  const recordStart = new Date(record.tanggalMulai)
-  const recordEnd = record.tanggalSelesai ? new Date(record.tanggalSelesai) : new Date()
-  return recordStart <= end && recordEnd >= start
+function getYearRange(year: number) {
+  const start = new Date(Date.UTC(year, 0, 1))
+  const nextYearStart = new Date(Date.UTC(year + 1, 0, 1))
+  const end = new Date(nextYearStart.getTime() - 1)
+  return { start, end }
+}
+
+function recordMatchesYear(record: RecordWithLevel, year: number): boolean {
+  if (!record.startDate) return false
+  const { start, end } = getYearRange(year)
+  const effectiveEnd = record.endDate ?? end
+  return record.startDate <= end && effectiveEnd >= start
+}
+
+function recordOverlapsRange(record: RecordWithLevel, start: Date, end: Date): boolean {
+  if (!record.startDate) return false
+  const effectiveEnd = record.endDate ?? end
+  return record.startDate <= end && effectiveEnd >= start
 }
 
 function getSemesterRange(year: number, semester: 1 | 2) {
   const startMonth = semester === 1 ? 0 : 6
   const endMonth = semester === 1 ? 5 : 11
-  const start = new Date(year, startMonth, 1)
-  const end = new Date(year, endMonth + 1, 0)
+  const start = new Date(Date.UTC(year, startMonth, 1))
+  const nextMonthStart = new Date(Date.UTC(year, endMonth + 1, 1))
+  const end = new Date(nextMonthStart.getTime() - 1)
   return { start, end }
 }
 
@@ -126,24 +207,28 @@ export default function Home() {
   const [chartType, setChartType] = useState<"line" | "bar">("line")
   const [error, setError] = useState<string>("")
   const [loading, setLoading] = useState(false)
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
 
   const levelOptions = useMemo(() => {
-    const levelSet = new Set<string>()
+    const levelLabels = new Map<string, string>()
 
     records.forEach((record) => {
-      if (record.computedLevel) {
-        levelSet.add(record.computedLevel)
+      if (!record.normalizedLevel) return
+      const display = record.computedLevel || record.normalizedLevel
+      if (!levelLabels.has(record.normalizedLevel)) {
+        levelLabels.set(record.normalizedLevel, display)
       }
     })
 
-    if (levelSet.size === 0) return []
+    if (levelLabels.size === 0) return []
 
-    return sortLevels(Array.from(levelSet))
+    return sortLevels(Array.from(levelLabels.values()))
   }, [records])
 
   const levelFilteredRecords = useMemo(() => {
     if (!selectedLevel) return records
-    return records.filter((record) => record.computedLevel === selectedLevel)
+    const normalizedSelection = normalizeLevelValue(selectedLevel)
+    return records.filter((record) => record.normalizedLevel === normalizedSelection)
   }, [records, selectedLevel])
 
   const recordsForView = useMemo(() => {
@@ -162,44 +247,143 @@ export default function Home() {
     return filtered
   }, [levelFilteredRecords, selectedYear, selectedSemester])
 
-  const monthlyData = useMemo(() => {
-    if (levelFilteredRecords.length === 0) return []
-    return calculateActiveInterns(levelFilteredRecords)
+  const availableYears = useMemo(() => {
+    const yearSet = new Set<number>()
+    const now = new Date()
+
+    levelFilteredRecords.forEach((record) => {
+      if (!record.startDate) return
+      const startYear = record.startDate.getUTCFullYear()
+      const endReference = record.endDate ?? now
+      const endYear = endReference.getUTCFullYear()
+      for (let year = startYear; year <= endYear; year += 1) {
+        yearSet.add(year)
+      }
+    })
+
+    return Array.from(yearSet).sort((a, b) => a - b)
   }, [levelFilteredRecords])
 
-  const years = useMemo(() => {
-    return Array.from(new Set(monthlyData.map((m) => Number.parseInt(m.month.split("-")[0])))).sort((a, b) => a - b)
-  }, [monthlyData])
+  const years = availableYears
 
   const semesterOptions = useMemo(() => {
-    const byYear = new Map<number, Set<1 | 2>>()
+    if (years.length === 0) return []
+    return years.flatMap((year) => [
+      { value: `${year}-S1`, label: `Semester 1 ${year} (Jan - Jun)` },
+      { value: `${year}-S2`, label: `Semester 2 ${year} (Jul - Des)` },
+    ])
+  }, [years])
 
-    monthlyData.forEach((entry) => {
-      const [yearStr, monthStr] = entry.month.split("-")
-      const year = Number.parseInt(yearStr, 10)
-      const month = Number.parseInt(monthStr, 10)
-      if (!byYear.has(year)) {
-        byYear.set(year, new Set())
+  const selectedRange = useMemo(() => {
+    if (selectedSemester) {
+      const { year, semester } = parseSemesterValue(selectedSemester)
+      return getSemesterRange(year, semester)
+    }
+
+    if (selectedYear) {
+      return getYearRange(selectedYear)
+    }
+
+    let minStart: Date | null = null
+    let maxEnd: Date | null = null
+    const now = new Date()
+
+    levelFilteredRecords.forEach((record) => {
+      if (!record.startDate) return
+      if (!minStart || record.startDate < minStart) {
+        minStart = record.startDate
       }
-      const semester = month <= 6 ? 1 : 2
-      byYear.get(year)?.add(semester as 1 | 2)
+      const endReference = record.endDate ?? now
+      if (!maxEnd || endReference > maxEnd) {
+        maxEnd = endReference
+      }
     })
 
-    const sortedYears = Array.from(byYear.keys()).sort((a, b) => a - b)
-    const options: { value: string; label: string }[] = []
-    sortedYears.forEach((year) => {
-      const semesters = Array.from(byYear.get(year) ?? []).sort()
-      semesters.forEach((semester) => {
-        const monthRange = semester === 1 ? "Jan - Jun" : "Jul - Des"
-        options.push({
-          value: `${year}-S${semester}`,
-          label: `Semester ${semester} ${year} (${monthRange})`,
-        })
-      })
-    })
+    if (!minStart || !maxEnd) return null
 
-    return options
+    return { start: minStart, end: maxEnd }
+  }, [selectedSemester, selectedYear, levelFilteredRecords])
+
+  const monthKeys = useMemo(() => {
+    if (!selectedRange) return []
+    return generateMonthKeysInRange(selectedRange.start, selectedRange.end)
+  }, [selectedRange])
+
+  const recordsForCounting = useMemo(() => {
+    if (selectedYear || selectedSemester) {
+      return recordsForView
+    }
+    return levelFilteredRecords
+  }, [selectedYear, selectedSemester, recordsForView, levelFilteredRecords])
+
+  const monthlyData = useMemo(() => {
+    if (monthKeys.length === 0) return []
+    return monthKeys.map((monthKey) => {
+      const { start, end } = getMonthBounds(monthKey)
+      const activeCount = recordsForCounting.filter((record) => isActiveInMonth(record, start, end)).length
+      return { month: monthKey, activeCount }
+    })
+  }, [monthKeys, recordsForCounting])
+
+  useEffect(() => {
+    if (monthlyData.length === 0) {
+      setSelectedMonth(null)
+      return
+    }
+
+    setSelectedMonth((previous) => {
+      if (previous && monthlyData.some((entry) => entry.month === previous)) {
+        return previous
+      }
+      return monthlyData[0].month
+    })
   }, [monthlyData])
+
+  const monthOptions = useMemo(() => {
+    return monthlyData.map((entry) => ({
+      value: entry.month,
+      label: formatMonthKey(entry.month),
+      count: entry.activeCount,
+    }))
+  }, [monthlyData])
+
+  const handleMonthSelection = useCallback((month: string | null) => {
+    setSelectedMonth(month)
+  }, [])
+
+  const selectedMonthCount = useMemo(() => {
+    if (!selectedMonth) return 0
+    const match = monthlyData.find((entry) => entry.month === selectedMonth)
+    return match?.activeCount ?? 0
+  }, [monthlyData, selectedMonth])
+
+  const sampleRows = useMemo(() => {
+    if (!selectedMonth) return []
+    const { start, end } = getMonthBounds(selectedMonth)
+    return recordsForCounting
+      .filter((record) => isActiveInMonth(record, start, end))
+      .slice(0, 10)
+      .map((record) => ({
+        name: record.nama ?? "-",
+        institution: record.instansi ?? "-",
+        start: formatDisplayDate(record.startDate, record.tanggalMulai),
+        end: formatDisplayDate(record.endDate, record.tanggalSelesai),
+      }))
+  }, [selectedMonth, recordsForCounting])
+
+  const dateWindowLabel = useMemo(() => {
+    if (!selectedSemester) return ""
+    const { year, semester } = parseSemesterValue(selectedSemester)
+    const rangeLabel = semester === 1 ? "Jan-Jun" : "Jul-Des"
+    return `Date window: ${rangeLabel} ${year} only`
+  }, [selectedSemester])
+
+  const sampleEmptyMessage = useMemo(() => {
+    if (selectedLevel && normalizeLevelValue(selectedLevel) === "SMK") {
+      return "No SMK rows overlap this month"
+    }
+    return "No rows overlap this month"
+  }, [selectedLevel])
 
   useEffect(() => {
     if (selectedYear && !years.includes(selectedYear)) {
@@ -221,27 +405,6 @@ export default function Home() {
     }
   }, [semesterOptions, selectedSemester])
 
-  const filteredData = useMemo(() => {
-    let data = monthlyData
-
-    if (selectedYear) {
-      data = data.filter((m) => Number.parseInt(m.month.split("-")[0]) === selectedYear)
-    }
-
-    if (selectedSemester) {
-      const { year, semester } = parseSemesterValue(selectedSemester)
-      const months = semester === 1 ? [1, 2, 3, 4, 5, 6] : [7, 8, 9, 10, 11, 12]
-      data = data.filter((m) => {
-        const [yearStr, monthStr] = m.month.split("-")
-        const monthYear = Number.parseInt(yearStr, 10)
-        const monthNumber = Number.parseInt(monthStr, 10)
-        return monthYear === year && months.includes(monthNumber)
-      })
-    }
-
-    return data
-  }, [monthlyData, selectedYear, selectedSemester])
-
   const institutionChartData = useMemo(() => {
     if (recordsForView.length === 0) return []
 
@@ -259,24 +422,37 @@ export default function Home() {
     setError("")
     try {
       const parsedRecords = await parseExcelFile(file)
-      const enrichedRecords: RecordWithLevel[] = parsedRecords.map((record) => ({
-        ...record,
-        computedLevel: determineLevel(record),
-      }))
+      const enrichedRecords: RecordWithLevel[] = parsedRecords.map((record) => {
+        const computedLevel = determineLevel(record)
+        const normalizedLevel =
+          normalizeLevelValue(record.jenjang) || normalizeLevelValue(computedLevel) || ""
+        const startDate = parseDateOnly(record.tanggalMulai)
+        const endDate = parseDateOnly(record.tanggalSelesai)
+
+        return {
+          ...record,
+          computedLevel,
+          normalizedLevel,
+          startDate,
+          endDate,
+        }
+      })
       setRecords(enrichedRecords)
 
-      // Calculate monthly data
-      const monthly = calculateActiveInterns(enrichedRecords)
-
-      // Set default year to first year
-      const uniqueYears = Array.from(new Set(monthly.map((m) => Number.parseInt(m.month.split("-")[0])))).sort(
-        (a, b) => a - b,
-      )
-      if (uniqueYears.length > 0) {
-        setSelectedYear(uniqueYears[0])
-      } else {
-        setSelectedYear(null)
-      }
+      // Determine default year based on enriched records
+      const yearSet = new Set<number>()
+      const now = new Date()
+      enrichedRecords.forEach((record) => {
+        if (!record.startDate) return
+        const startYear = record.startDate.getUTCFullYear()
+        const endReference = record.endDate ?? now
+        const endYear = endReference.getUTCFullYear()
+        for (let year = startYear; year <= endYear; year += 1) {
+          yearSet.add(year)
+        }
+      })
+      const sortedYears = Array.from(yearSet).sort((a, b) => a - b)
+      setSelectedYear(sortedYears.length > 0 ? sortedYears[0] : null)
 
       setSelectedLevel(null)
       setSelectedSemester(null)
@@ -312,6 +488,7 @@ export default function Home() {
     setSelectedYear(null)
     setSelectedSemester(null)
     setSelectedLevel(null)
+    setSelectedMonth(null)
     setError("")
   }, [])
 
@@ -353,10 +530,23 @@ export default function Home() {
               onReset={handleReset}
             />
 
-            {/* Chart */}
-            {filteredData.length > 0 && (
-              <ChartDisplay data={filteredData} chartType={chartType} title="Jumlah Magang Aktif per Bulan" />
+            {dateWindowLabel && (
+              <p className="text-sm text-muted-foreground">{dateWindowLabel}</p>
             )}
+
+            {/* Chart */}
+            {monthlyData.length > 0 && (
+              <ChartDisplay data={monthlyData} chartType={chartType} title="Jumlah Magang Aktif per Bulan" />
+            )}
+
+            <SampleRowsTable
+              monthOptions={monthOptions}
+              selectedMonth={selectedMonth}
+              onMonthChange={handleMonthSelection}
+              rows={sampleRows}
+              activeCount={selectedMonthCount}
+              emptyMessage={sampleEmptyMessage}
+            />
 
             {/* Institution Donut */}
             {institutionChartData.length > 0 && (
@@ -364,7 +554,7 @@ export default function Home() {
             )}
 
             {/* Summary Table */}
-            {filteredData.length > 0 && <SummaryTable data={filteredData} records={recordsForView} />}
+            {monthlyData.length > 0 && <SummaryTable data={monthlyData} records={recordsForView} />}
           </div>
         )}
       </div>

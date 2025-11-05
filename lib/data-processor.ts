@@ -1,27 +1,27 @@
 import * as XLSX from "xlsx"
 import type { InternshipRecord, MonthlyData } from "./types"
 
-// Helper function to format date as YYYY-MM-DD
+// Helper function to format date as YYYY-MM-DD in UTC to avoid timezone drift
 function formatDate(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(date.getUTCDate()).padStart(2, "0")
   return `${year}-${month}-${day}`
 }
 
-// Helper function to format date as YYYY-MM
+// Helper function to format date as YYYY-MM in UTC to avoid timezone drift
 function formatYearMonth(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0")
   return `${year}-${month}`
 }
 
 // Helper function to parse Excel serial date
 function excelDateToJSDate(excelDate: number): Date {
   // Excel epoch is 1899-12-30
-  const excelEpoch = new Date(1899, 11, 30)
+  const excelEpoch = Date.UTC(1899, 11, 30)
   const millisecondsPerDay = 24 * 60 * 60 * 1000
-  return new Date(excelEpoch.getTime() + excelDate * millisecondsPerDay)
+  return new Date(excelEpoch + excelDate * millisecondsPerDay)
 }
 
 function getFirstTruthyValue(row: any, keys: string[]): any {
