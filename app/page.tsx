@@ -488,7 +488,7 @@ export default function Home() {
     if (!selectedRange) return ""
 
     if (selectedYear) {
-      return `Periode dipilih: Januari - Desember ${selectedYear}`
+      return `Periode dipilih: Tahun ${selectedYear}`
     }
 
     if (customRange) {
