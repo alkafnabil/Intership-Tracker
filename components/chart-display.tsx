@@ -148,7 +148,8 @@ const ChartDisplay = memo(function ChartDisplay({
 
     setIsExporting(true)
     try {
-      await exportElementToPdf(exportRef.current, title)
+      const exportTitle = exportHeading || title
+      await exportElementToPdf(exportRef.current, exportTitle)
     } catch (error) {
       console.error("Failed to export chart", error)
     } finally {

@@ -129,8 +129,8 @@ function isActiveInMonth(record: RecordWithLevel, monthStart: Date, monthEnd: Da
 
 const monthLabelFormatter = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" })
 const dateDisplayFormatter = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" })
-const monthOnlyFormatter = new Intl.DateTimeFormat("id-ID", { month: "long" })
 const printDateFormatter = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric" })
+const monthOnlyFormatter = new Intl.DateTimeFormat("id-ID", { month: "long" })
 
 function formatMonthKey(monthKey: string): string {
   const [yearStr, monthStr] = monthKey.split("-")
@@ -170,6 +170,12 @@ function formatRangeToID(start?: Date | null, end?: Date | null): string {
   const endYear = latest.getUTCFullYear()
   const startHalfIndex = Math.floor(earliest.getUTCMonth() / 6)
   const endHalfIndex = Math.floor(latest.getUTCMonth() / 6)
+  const startMonthKey = formatYearMonthUTC(earliest)
+  const endMonthKey = formatYearMonthUTC(latest)
+  const startLabel = formatMonthKey(startMonthKey)
+  const endLabel = formatMonthKey(endMonthKey)
+  const startMonthName = monthOnlyFormatter.format(new Date(Date.UTC(startYear, earliest.getUTCMonth(), 1)))
+  const endMonthName = monthOnlyFormatter.format(new Date(Date.UTC(endYear, latest.getUTCMonth(), 1)))
 
   if (startYear === endYear && startHalfIndex === endHalfIndex) {
     const halfLabels =
@@ -179,17 +185,14 @@ function formatRangeToID(start?: Date | null, end?: Date | null): string {
     return `Rekap Periode Bulan ${halfLabels.start} - ${halfLabels.end} ${startYear}`
   }
 
-  const startLabel = monthOnlyFormatter.format(earliest)
-  const endLabel = monthOnlyFormatter.format(latest)
-
   if (startYear === endYear) {
-    if (startLabel === endLabel) {
-      return `Rekap Periode Bulan ${startLabel} ${startYear}`
+    if (startMonthKey === endMonthKey) {
+      return `Rekap Periode Bulan ${startLabel}`
     }
-    return `Rekap Periode Bulan ${startLabel} - ${endLabel} ${startYear}`
+    return `Rekap Periode Bulan ${startMonthName} - ${endMonthName} ${startYear}`
   }
 
-  return `Rekap Periode Bulan ${startLabel} ${startYear} - ${endLabel} ${endYear}`
+  return `Rekap Periode Bulan ${startLabel} - ${endLabel}`
 }
 
 function sortLevels(levels: string[]): string[] {
@@ -441,7 +444,13 @@ export default function Home() {
     }))
   }, [monthlyData])
 
-  const reportTitle = useMemo(() => formatRangeToID(selectedRange?.start, selectedRange?.end), [selectedRange])
+  const reportTitle = useMemo(() => {
+    const baseTitle = formatRangeToID(selectedRange?.start, selectedRange?.end)
+    if (selectedLevel) {
+      return `${baseTitle} - Level ${selectedLevel}`
+    }
+    return baseTitle
+  }, [selectedRange, selectedLevel])
   const reportSubheader = useMemo(
     () => `Tanggal cetak: ${printDateLabel} \u2022 Sumber: Internship Tracker.`,
     [printDateLabel]
