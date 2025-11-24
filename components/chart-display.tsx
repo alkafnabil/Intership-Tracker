@@ -207,6 +207,7 @@ const ChartDisplay = memo(function ChartDisplay({
                   dataKey="monthKey"
                   stroke="var(--muted-foreground)"
                   style={{ fontSize: "12px" }}
+                  interval={0}
                   tickFormatter={formatMonthLabel}
                 />
                 <YAxis stroke="var(--muted-foreground)" style={{ fontSize: "12px" }} />
@@ -251,6 +252,7 @@ const ChartDisplay = memo(function ChartDisplay({
                   dataKey="monthKey"
                   stroke="var(--muted-foreground)"
                   style={{ fontSize: "12px" }}
+                  interval={0}
                   tickFormatter={formatMonthLabel}
                 />
                 <YAxis stroke="var(--muted-foreground)" style={{ fontSize: "12px" }} />
