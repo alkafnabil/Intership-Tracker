@@ -446,7 +446,7 @@ export default function Home() {
 
   const reportTitle = useMemo(() => {
     const baseTitle =
-      selectedYear && !customRange
+      selectedYear != null
         ? `Rekap Periode Tahun ${selectedYear}`
         : formatRangeToID(selectedRange?.start, selectedRange?.end)
 
