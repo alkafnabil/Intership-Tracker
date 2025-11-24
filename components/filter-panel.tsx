@@ -9,9 +9,6 @@ interface FilterPanelProps {
   years: number[]
   selectedYear: number | null
   onYearChange: (year: number | null) => void
-  semesters: { value: string; label: string }[]
-  selectedSemester: string | null
-  onSemesterChange: (semester: string | null) => void
   periodOptions: { value: string; label: string }[]
   selectedStartPeriod: string | null
   selectedEndPeriod: string | null
@@ -30,9 +27,6 @@ const FilterPanel = memo(function FilterPanel({
   years,
   selectedYear,
   onYearChange,
-  semesters,
-  selectedSemester,
-  onSemesterChange,
   periodOptions,
   selectedStartPeriod,
   selectedEndPeriod,
@@ -103,23 +97,6 @@ const FilterPanel = memo(function FilterPanel({
             {years.map((year) => (
               <option key={year} value={year}>
                 {year}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Semester Filter */}
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-foreground mb-2">Semester</label>
-          <select
-            value={selectedSemester || ""}
-            onChange={(e) => onSemesterChange(e.target.value || null)}
-            className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground"
-          >
-            <option value="">All Semesters</option>
-            {semesters.map((semester) => (
-              <option key={semester.value} value={semester.value}>
-                {semester.label}
               </option>
             ))}
           </select>
