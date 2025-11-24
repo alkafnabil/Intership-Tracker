@@ -445,12 +445,16 @@ export default function Home() {
   }, [monthlyData])
 
   const reportTitle = useMemo(() => {
-    const baseTitle = formatRangeToID(selectedRange?.start, selectedRange?.end)
+    const baseTitle =
+      selectedYear && !customRange
+        ? `Rekap Periode Tahun ${selectedYear}`
+        : formatRangeToID(selectedRange?.start, selectedRange?.end)
+
     if (selectedLevel) {
       return `${baseTitle} - Level ${selectedLevel}`
     }
     return baseTitle
-  }, [selectedRange, selectedLevel])
+  }, [selectedYear, customRange, selectedRange, selectedLevel])
   const reportSubheader = useMemo(
     () => `Tanggal cetak: ${printDateLabel} \u2022 Sumber: Internship Tracker.`,
     [printDateLabel]
