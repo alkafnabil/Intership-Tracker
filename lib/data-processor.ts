@@ -24,12 +24,41 @@ function excelDateToJSDate(excelDate: number): Date {
   return new Date(excelEpoch + excelDate * millisecondsPerDay)
 }
 
+function normalizeHeaderKey(value: any): string {
+  if (value === undefined || value === null) return ""
+  return value.toString().trim().toLowerCase().replace(/[^a-z0-9]/g, "")
+}
+
 function getFirstTruthyValue(row: any, keys: string[]): any {
   for (const key of keys) {
     if (key in row && row[key] !== undefined && row[key] !== null && row[key] !== "") {
       return row[key]
     }
   }
+
+  const normalizedEntries = Object.entries(row).map(([key, value]) => ({
+    normalized: normalizeHeaderKey(key),
+    value,
+  }))
+
+  for (const key of keys) {
+    const normalizedKey = normalizeHeaderKey(key)
+    for (const entry of normalizedEntries) {
+      if (entry.normalized === normalizedKey && entry.value !== undefined && entry.value !== null && entry.value !== "") {
+        return entry.value
+      }
+    }
+  }
+
+  for (const key of keys) {
+    const normalizedKey = normalizeHeaderKey(key)
+    for (const entry of normalizedEntries) {
+      if (entry.normalized.includes(normalizedKey) && entry.value !== undefined && entry.value !== null && entry.value !== "") {
+        return entry.value
+      }
+    }
+  }
+
   return ""
 }
 
@@ -107,6 +136,10 @@ export async function parseExcelFile(file: File): Promise<InternshipRecord[]> {
             ]),
           )
 
+          const penempatan = normaliseString(
+            getFirstTruthyValue(row, ["Penempatan", "Placement", "Lokasi", "Unit"]),
+          )
+
           const jenjang = normaliseString(
             getFirstTruthyValue(row, [
               "Jenjang",
@@ -122,6 +155,7 @@ export async function parseExcelFile(file: File): Promise<InternshipRecord[]> {
           return {
             nama,
             instansi,
+            penempatan,
             jenjang,
             tanggalMulai,
             tanggalSelesai,

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback, useEffect } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import FileUploadArea from "@/components/file-upload-area"
@@ -15,6 +15,7 @@ import { Printer } from "lucide-react"
 
 const LEVEL_ORDER = ["SMK", "Universitas"] as const
 const SMK_KEYWORDS = ["smk", "stm", "smkn", "smks", "sekolah menengah kejuruan", "vocational"]
+const DEFAULT_DATA_PATH = "/internship-data.xlsx"
 const UNIVERSITY_KEYWORDS = [
   "universitas",
   "kampus",
@@ -241,6 +242,7 @@ export default function Home() {
   const [selectedStartPeriod, setSelectedStartPeriod] = useState<string | null>(null)
   const [selectedEndPeriod, setSelectedEndPeriod] = useState<string | null>(null)
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
+  const hasAutoLoaded = useRef(false)
   const printDateLabel = useMemo(() => printDateFormatter.format(new Date()), [])
   const handlePrint = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -479,6 +481,7 @@ export default function Home() {
       .map((record) => ({
         name: record.nama ?? "-",
         institution: record.instansi ?? "-",
+        placement: record.penempatan && record.penempatan.trim() !== "" ? record.penempatan : "-",
         start: formatDisplayDate(record.startDate, record.tanggalMulai),
         end: formatDisplayDate(record.endDate, record.tanggalSelesai),
       }))
@@ -572,6 +575,29 @@ export default function Home() {
       setLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    if (hasAutoLoaded.current || records.length > 0) return
+    hasAutoLoaded.current = true
+
+    const loadDefault = async () => {
+      try {
+        const response = await fetch(DEFAULT_DATA_PATH)
+        if (!response.ok) {
+          throw new Error(`Default data file not found (${response.status}).`)
+        }
+        const buffer = await response.arrayBuffer()
+        const file = new File([buffer], "internship-data.xlsx", {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        })
+        await handleFileUpload(file)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error loading default data file")
+      }
+    }
+
+    void loadDefault()
+  }, [handleFileUpload, records.length])
 
   const handleYearChange = useCallback(
     (year: number | null) => {

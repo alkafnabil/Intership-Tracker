@@ -13,6 +13,7 @@ interface MonthOption {
 interface SampleRow {
   name: string
   institution: string
+  placement: string
   start: string
   end: string
 }
@@ -81,15 +82,17 @@ const SampleRowsTable = memo(function SampleRowsTable({
               <TableRow>
                 <TableHead>Nama</TableHead>
                 <TableHead>Instansi</TableHead>
+                <TableHead>Penempatan</TableHead>
                 <TableHead>Mulai</TableHead>
                 <TableHead>Selesai</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row, index) => (
-                <TableRow key={`${row.name}-${row.institution}-${index}`}>
+                <TableRow key={`${row.name}-${row.institution}-${row.placement}-${index}`}>
                   <TableCell className="whitespace-nowrap">{row.name}</TableCell>
                   <TableCell>{row.institution}</TableCell>
+                  <TableCell className="whitespace-nowrap">{row.placement}</TableCell>
                   <TableCell className="whitespace-nowrap">{row.start}</TableCell>
                   <TableCell className="whitespace-nowrap">{row.end}</TableCell>
                 </TableRow>

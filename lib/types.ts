@@ -1,6 +1,7 @@
 export interface InternshipRecord {
   nama?: string
   instansi?: string
+  penempatan?: string
   jenjang?: string
   tanggalMulai: string
   tanggalSelesai?: string
